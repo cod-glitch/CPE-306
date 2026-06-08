@@ -1,159 +1,65 @@
-# ─────────────────────────────────────────────
-#  Custom Exception
-# ─────────────────────────────────────────────
+"""
+BankAccount Class
+Student: Omolola Fathiu Adedamola
+Matric No: CPE/2023/1093
+"""
 
 class InsufficientFundsError(Exception):
-    """Raised when a withdrawal exceeds the available balance
-    (including the transaction fee)."""
-
-    def __init__(self, amount: float, balance: float, fee: float):
-        self.amount = amount
-        self.balance = balance
-        self.fee = fee
-        super().__init__(
-            f"Cannot withdraw ₦{amount:.2f} + ₦{fee:.2f} fee "
-            f"(total ₦{amount + fee:.2f}); available balance is ₦{balance:.2f}."
-        )
-
-
-# ─────────────────────────────────────────────
-#  BankAccount Class
-# ─────────────────────────────────────────────
+    """Custom exception raised when withdrawal amount + fee exceeds balance."""
+    pass
 
 class BankAccount:
-    """A simple bank account with deposit/withdrawal support and a per-withdrawal fee."""
-
-    # Class-level transaction fee deducted on every withdrawal
-    transaction_fee: float = 0.50
-
-    # ── Construction ──────────────────────────
-
-    def __init__(self, owner: str, initial_balance: float = 0.0) -> None:
-        """
-        Parameters
-        ----------
-        owner           : Account holder's name.
-        initial_balance : Starting balance (must be >= 0).
-
-        Raises
-        ------
-        ValueError  If initial_balance is negative.
-        """
+    """A simple bank account with deposit, withdrawal, and a transaction fee."""
+    
+    transaction_fee = 0.50   # class attribute deducted from every withdrawal
+    
+    def __init__(self, owner: str, initial_balance: float = 0.0):
+        """Constructor with owner name and optional initial balance (default 0.0)."""
         if initial_balance < 0:
-            raise ValueError(
-                f"Initial balance cannot be negative; got {initial_balance}."
-            )
-        self.owner: str = owner
-        self._balance: float = float(initial_balance)   # private attribute
-
-    # ── Read-only property ────────────────────
-
+            raise ValueError("Initial balance cannot be negative")
+        self._owner = owner
+        self._balance = initial_balance
+    
     @property
     def balance(self) -> float:
-        """Current account balance (read-only)."""
+        """Read-only property for balance."""
         return self._balance
-
-    # ── Deposit ───────────────────────────────
-
-    def deposit(self, amount: float) -> float:
-        """Add *amount* to the balance and return the new balance.
-
-        Raises
-        ------
-        ValueError  If amount is not strictly positive.
-        """
+    
+    @property
+    def owner(self) -> str:
+        """Read-only property for owner."""
+        return self._owner
+    
+    def deposit(self, amount: float) -> None:
+        """Add positive amount to balance. Raises ValueError if amount <= 0."""
         if amount <= 0:
-            raise ValueError(
-                f"Deposit amount must be positive; got {amount}."
-            )
+            raise ValueError("Deposit amount must be positive")
         self._balance += amount
-        return self._balance
-
-    # ── Withdrawal ────────────────────────────
-
-    def withdraw(self, amount: float) -> float:
-        """Subtract *amount* + transaction_fee from the balance and return new balance.
-
-        ⚠️  THE PROBLEM (see notes at bottom of file):
-            The total cost of a withdrawal is  amount + transaction_fee.
-            The InsufficientFundsError guard must therefore check against
-            that *combined* total, NOT just the raw amount.
-
-        Raises
-        ------
-        ValueError              If amount is not strictly positive.
-        InsufficientFundsError  If (amount + transaction_fee) > balance.
+    
+    def withdraw(self, amount: float) -> None:
+        """
+        Subtract amount + transaction_fee from balance.
+        Raises ValueError if amount <= 0.
+        Raises InsufficientFundsError if amount + fee > balance.
         """
         if amount <= 0:
-            raise ValueError(
-                f"Withdrawal amount must be positive; got {amount}."
+            raise ValueError("Withdrawal amount must be positive")
+        total_deduction = amount + self.transaction_fee
+        if total_deduction > self._balance:
+            raise InsufficientFundsError(
+                f"Insufficient funds: need {total_deduction:.2f}, available {self._balance:.2f}"
             )
-
-        total_cost = amount + BankAccount.transaction_fee
-        if total_cost > self._balance:
-            raise InsufficientFundsError(amount, self._balance, BankAccount.transaction_fee)
-
-        self._balance -= total_cost
-        return self._balance
-
-    # ── Alternate constructor ─────────────────
-
+        self._balance -= total_deduction
+    
     @classmethod
-    def from_dict(cls, data: dict) -> "BankAccount":
-        """Create a BankAccount from a dictionary.
-
-        Expected keys
-        -------------
-        'owner'   : str   – account holder name
-        'balance' : float – initial balance (optional, defaults to 0.0)
-
-        Raises
-        ------
-        KeyError    If 'owner' key is missing.
-        ValueError  If balance is negative (propagated from __init__).
-        """
-        owner = data["owner"]                          # KeyError if missing
-        balance = data.get("balance", 0.0)
-        return cls(owner, balance)
-
-    # ── String representations ────────────────
-
+    def from_dict(cls, data: dict):
+        """Create a BankAccount from a dictionary with 'owner' and 'balance' keys."""
+        return cls(data['owner'], data['balance'])
+    
     def __str__(self) -> str:
-        return (
-            f"BankAccount(owner='{self.owner}', "
-            f"balance=₦{self._balance:.2f})"
-        )
-
+        """User-friendly string representation."""
+        return f"BankAccount(owner='{self.owner}', balance={self.balance:.2f})"
+    
     def __repr__(self) -> str:
-        return (
-            f"BankAccount(owner={self.owner!r}, "
-            f"initial_balance={self._balance!r})"
-        )
-
-
-# ─────────────────────────────────────────────
-#  ⚠️  THE PROBLEM — Identified & Explained
-# ─────────────────────────────────────────────
-#
-#  The subtle but critical bug that a naive implementation produces:
-#
-#  WRONG guard (common mistake):
-#      if amount > self._balance:          ← ignores the fee
-#          raise InsufficientFundsError(...)
-#      self._balance -= (amount + transaction_fee)   ← fee silently overdrafts!
-#
-#  SCENARIO:
-#      balance = ₦10.00
-#      withdraw(₦10.00)
-#
-#      Wrong code:  10.00 > 10.00 → False  →  proceeds
-#                   balance becomes  10.00 - 10.00 - 0.50  =  -0.50  ← OVERDRAFT!
-#
-#  CORRECT guard (used above):
-#      total_cost = amount + transaction_fee       # ₦10.50
-#      if total_cost > self._balance:              # 10.50 > 10.00 → True → raises!
-#          raise InsufficientFundsError(...)
-#
-#  The fee must be factored into the affordability check BEFORE the
-#  balance is modified, not after. Doing it after allows the account
-#  balance to go negative — silently breaking the class invariant.
+        """Developer-friendly representation."""
+        return f"BankAccount('{self.owner}', {self.balance})"
